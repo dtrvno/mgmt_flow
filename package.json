@@ -1,0 +1,14 @@
+{
+  "name": "mgmt_flow-dashboard",
+  "version": "2.0.0",
+  "private": true,
+  "description": "mgmt_flow dashboard server with Postgres-backed jobs and workflows",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
+  }
+}

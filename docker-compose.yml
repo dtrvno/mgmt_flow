@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mgmtflow
+      POSTGRES_PASSWORD: mgmtflow
+      POSTGRES_DB: mgmtflow
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mgmtflow -d mgmtflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://mgmtflow:mgmtflow@db:5432/mgmtflow
+      PORT: 3000
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:

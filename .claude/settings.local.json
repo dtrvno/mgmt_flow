@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:claude.com)",
+      "Read(//Users/dima/Downloads/**)",
+      "Bash(curl -L \"https://claude.ai/api/desktop/darwin/universal/dmg/latest/redirect\" -o Claude.dmg --progress-bar)",
+      "Bash(hdiutil attach *)",
+      "Bash(cp -R /Volumes/Claude/Claude.app /Applications/)",
+      "Bash(hdiutil detach *)",
+      "Bash(open *)"
+    ]
+  }
+}
