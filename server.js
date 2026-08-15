@@ -1,14 +1,12 @@
 const express = require('express');
 const path = require('path');
-const { Pool } = require('pg');
+const pool = require('./db');
 
 const PORT = process.env.PORT || 3000;
-const DATABASE_URL = process.env.DATABASE_URL || 'postgres://mgmtflow:mgmtflow@localhost:5432/mgmtflow';
-
-const pool = new Pool({ connectionString: DATABASE_URL });
 
 const app = express();
 app.use(express.json());
+app.use('/api', require('./routes/flows'));
 
 // --- API ---
 
@@ -44,7 +42,7 @@ app.get('/api/jobs', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT j.id, j.name, j.status, j.progress, j.triggered_by, j.started_at, j.completed_at, j.created_at,
-              w.name AS workflow_name
+              j.flow_definition_id, w.name AS workflow_name
        FROM jobs j
        LEFT JOIN workflows w ON w.id = j.workflow_id
        ORDER BY j.created_at DESC`

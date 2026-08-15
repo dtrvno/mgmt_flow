@@ -8,6 +8,8 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "amqplib": "^0.10.4",
+    "dockerode": "^4.0.2",
     "express": "^4.19.2",
     "pg": "^8.12.0"
   }

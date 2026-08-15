@@ -235,6 +235,14 @@
   .queue-meta{font-size:11px;color:var(--text-faint);margin-top:2px;}
   .queue-progress{flex:1;max-width:160px;}
 
+  .btn-run{
+    background:var(--teal-dim);color:var(--text);border:1px solid var(--teal);
+    border-radius:8px;padding:8px 16px;font-family:inherit;font-size:12.5px;
+    font-weight:600;cursor:pointer;transition:background .15s;
+  }
+  .btn-run:hover:not(:disabled){background:var(--teal);color:var(--bg);}
+  .btn-run:disabled{opacity:.5;cursor:default;}
+
   .toggle-row{
     display:flex;align-items:center;justify-content:space-between;
     padding:12px 0;border-bottom:1px solid var(--border);
@@ -534,6 +542,14 @@
       <div class="section-sub">Pipeline queue and run status — live from Postgres.</div>
 
       <div class="card">
+        <div class="card-title">Flows</div>
+        <div class="list-meta" style="margin-bottom:12px;">Run an example flow through the execution engine.</div>
+        <button class="btn-run run-flow-btn" data-flow="bootstrap" style="margin-right:8px;">Run bootstrap flow</button>
+        <button class="btn-run run-flow-btn" data-flow="sleep-30">Run sleep-30 flow</button>
+        <div id="flow-run-status" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="card">
         <div class="card-title">Pipeline Queue</div>
         <div id="jobs-list">
           <div class="list-meta">Loading jobs…</div>
@@ -763,6 +779,75 @@
       el.innerHTML = '<div class="list-meta">Could not load workflows — is the API reachable?</div>';
     }
   }
+
+  // --- Flow run (execution engine) ---
+  const runFlowBtns = document.querySelectorAll('.run-flow-btn');
+  const flowStatusEl = document.getElementById('flow-run-status');
+  let flowPollTimer = null;
+
+  function setRunButtonsDisabled(disabled) {
+    runFlowBtns.forEach(b => { b.disabled = disabled; });
+  }
+
+  function renderFlowStatus(flow) {
+    const taskRows = flow.tasks.map(t => {
+      const firstOutputLine = t.output ? t.output.split('\n')[0] : '';
+      const meta = [t.exit_code !== null ? 'exit ' + t.exit_code : '', firstOutputLine].filter(Boolean).join(' · ');
+      return `
+        <div class="queue-item">
+          <span class="badge ${statusBadge[t.status] || 'info'}">${statusLabel[t.status] || t.status}</span>
+          <div style="flex:1;">
+            <div class="queue-name">${t.display_id}</div>
+            <div class="queue-meta">${meta}</div>
+          </div>
+        </div>`;
+    }).join('');
+    flowStatusEl.innerHTML = `<div class="list-meta" style="margin-bottom:8px;">Run #${flow.id} — ${statusLabel[flow.status] || flow.status}</div>${taskRows}`;
+  }
+
+  function pollFlowStatus(jobId) {
+    clearInterval(flowPollTimer);
+    flowPollTimer = setInterval(async () => {
+      try {
+        const res = await fetch('/api/flows/' + jobId);
+        const flow = await res.json();
+        renderFlowStatus(flow);
+        if (flow.status === 'complete' || flow.status === 'failed') {
+          clearInterval(flowPollTimer);
+          setRunButtonsDisabled(false);
+          loadJobs();
+        }
+      } catch (e) {
+        clearInterval(flowPollTimer);
+        setRunButtonsDisabled(false);
+      }
+    }, 1000);
+  }
+
+  runFlowBtns.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const flowId = btn.dataset.flow;
+      setRunButtonsDisabled(true);
+      flowStatusEl.innerHTML = '<div class="list-meta">Starting run…</div>';
+      try {
+        const res = await fetch('/api/flow-definitions/' + flowId + '/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ triggered_by: 'dashboard' })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Failed to start run');
+        }
+        const job = await res.json();
+        loadJobs();
+        pollFlowStatus(job.id);
+      } catch (e) {
+        flowStatusEl.innerHTML = `<div class="list-meta">Could not start run — ${e.message}</div>`;
+        setRunButtonsDisabled(false);
+      }
+    });
+  });
 
   // Load whichever tab is active on first paint
   if (document.getElementById('view-workflow').classList.contains('active')) loadJobs();
