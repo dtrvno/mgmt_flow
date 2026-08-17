@@ -47,8 +47,9 @@ services:
       - "3000:3000"
 
   engine:
-    build: .
-    command: ["node", "engine.js"]
+    build:
+      context: .
+      dockerfile: Dockerfile.engine
     restart: unless-stopped
     depends_on:
       db:
@@ -60,6 +61,8 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "5001:5000"
 
 volumes:
   pgdata:

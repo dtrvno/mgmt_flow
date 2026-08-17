@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
 
-COPY server.js engine.js db.js queue.js ./
+COPY server.js db.js queue.js ./
 COPY routes ./routes
 COPY mgmt_flow_dashboard.html ./
 
