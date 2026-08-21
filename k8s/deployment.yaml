@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mgmt-flow
+  labels:
+    app: mgmt-flow
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mgmt-flow
+  template:
+    metadata:
+      labels:
+        app: mgmt-flow
+    spec:
+      containers:
+        - name: mgmt-flow
+          image: mgmt-flow-static:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: mgmtflow-credentials, key: DATABASE_URL }
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef: { name: mgmtflow-credentials, key: RABBITMQ_URL }
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          readinessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10

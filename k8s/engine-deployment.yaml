@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mgmt-flow-engine
+  labels:
+    app: mgmt-flow-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mgmt-flow-engine
+  template:
+    metadata:
+      labels:
+        app: mgmt-flow-engine
+    spec:
+      serviceAccountName: mgmt-flow-engine
+      containers:
+        - name: mgmt-flow-engine
+          image: mgmt-flow-engine:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: mgmtflow-credentials, key: DATABASE_URL }
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef: { name: mgmtflow-credentials, key: RABBITMQ_URL }
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef: { fieldPath: metadata.namespace }
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mgmt-flow-engine
+spec:
+  selector:
+    app: mgmt-flow-engine
+  ports:
+    - port: 5000
+      targetPort: 5000
+  type: ClusterIP

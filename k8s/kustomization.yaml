@@ -1,0 +1,8 @@
+resources:
+  - secret.yaml
+  - postgres.yaml
+  - rabbitmq.yaml
+  - deployment.yaml
+  - service.yaml
+  - engine-rbac.yaml
+  - engine-deployment.yaml
