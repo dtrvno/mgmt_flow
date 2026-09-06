@@ -48,11 +48,17 @@ done
 echo "==> Applying Kubernetes manifests..."
 kubectl apply -k k8s/
 
-echo "==> Waiting for workloads to become ready..."
-kubectl rollout status deployment/postgres --timeout=120s
-kubectl rollout status deployment/rabbitmq --timeout=120s
-kubectl rollout status deployment/mgmt-flow --timeout=120s
-kubectl rollout status deployment/mgmt-flow-engine --timeout=120s
+# First-time pulls of postgres/rabbitmq/python images inside a fresh kind
+# node can take well over a minute, so give rollouts plenty of room.
+echo "==> Waiting for workloads to become ready (first run on a new machine can take a few minutes while images pull)..."
+kubectl rollout status deployment/postgres --timeout=300s
+
+echo "==> Ensuring database structure exists..."
+"$(dirname "$0")/init_db.sh"
+
+kubectl rollout status deployment/rabbitmq --timeout=300s
+kubectl rollout status deployment/mgmt-flow --timeout=300s
+kubectl rollout status deployment/mgmt-flow-engine --timeout=300s
 
 echo "==> Starting port-forwards in the background..."
 nohup kubectl port-forward svc/mgmt-flow 8080:3000 -n "${NAMESPACE}" \
