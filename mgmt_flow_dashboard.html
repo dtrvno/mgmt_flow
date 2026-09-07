@@ -243,6 +243,52 @@
   .btn-run:hover:not(:disabled){background:var(--teal);color:var(--bg);}
   .btn-run:disabled{opacity:.5;cursor:default;}
 
+  .btn-secondary{
+    background:transparent;color:var(--text-dim);border:1px solid var(--border);
+    border-radius:8px;padding:8px 16px;font-family:inherit;font-size:12.5px;
+    font-weight:600;cursor:pointer;transition:border-color .15s,color .15s;
+  }
+  .btn-secondary:hover{color:var(--text);border-color:var(--text-dim);}
+
+  .btn-link{
+    background:none;border:none;color:var(--teal);font-family:inherit;
+    font-size:11px;font-weight:600;cursor:pointer;padding:0;flex-shrink:0;
+  }
+  .btn-link:hover{color:var(--text);}
+
+  .flow-json{
+    background:var(--bg);border:1px solid var(--border);border-radius:6px;
+    padding:10px;font-size:11px;color:var(--text-dim);white-space:pre-wrap;
+    word-break:break-word;margin-top:8px;max-height:260px;overflow:auto;
+  }
+
+  /* Create Flow modal */
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(4,7,9,0.7);
+    display:none;align-items:center;justify-content:center;z-index:100;
+  }
+  .modal-overlay.active{display:flex;}
+  .modal-box{
+    background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+    padding:20px;width:560px;max-width:92vw;max-height:86vh;overflow:auto;
+  }
+  .modal-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;}
+  .modal-sub{font-size:11px;color:var(--text-faint);margin-bottom:14px;}
+  .field-label{
+    font-size:10px;text-transform:uppercase;letter-spacing:0.5px;
+    color:var(--text-faint);margin:12px 0 5px;font-weight:600;
+  }
+  .field-label:first-of-type{margin-top:0;}
+  .field-input{
+    width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+    color:var(--text);font-family:inherit;font-size:12px;padding:8px 10px;
+    box-sizing:border-box;
+  }
+  .field-input:focus{outline:none;border-color:var(--teal);}
+  textarea.field-input{min-height:170px;resize:vertical;line-height:1.5;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
+  .form-error{color:var(--red);font-size:11.5px;margin-top:10px;}
+
   .toggle-row{
     display:flex;align-items:center;justify-content:space-between;
     padding:12px 0;border-bottom:1px solid var(--border);
@@ -562,6 +608,17 @@
       <div class="section-heading">Settings</div>
       <div class="section-sub">Automation rules — live from Postgres.</div>
 
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">
+          <span>Available Flows</span>
+          <button class="btn-run" id="create-flow-btn" style="padding:5px 12px;font-size:11px;">+ Create Flow</button>
+        </div>
+        <div class="list-meta" style="margin-bottom:12px;">Flow definitions registered with the execution engine.</div>
+        <div id="flow-definitions-list">
+          <div class="list-meta">Loading flows…</div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-title">Automation Rules</div>
         <div id="workflows-list">
@@ -676,6 +733,40 @@
   </div>
 </div>
 
+<!-- Create Flow modal -->
+<div class="modal-overlay" id="create-flow-overlay">
+  <div class="modal-box">
+    <div class="modal-title">Create Flow</div>
+    <div class="modal-sub">Registers a new flow definition with the execution engine (POST /api/flow-definitions).</div>
+
+    <div class="field-label">Display ID</div>
+    <input class="field-input" id="cf-display-id" placeholder="e.g. nightly-cleanup" autocomplete="off">
+
+    <div class="field-label">Name</div>
+    <input class="field-input" id="cf-name" placeholder="e.g. Nightly Cleanup" autocomplete="off">
+
+    <div class="field-label">Version (optional)</div>
+    <input class="field-input" id="cf-version" placeholder="e.g. 1.0" autocomplete="off">
+
+    <div class="field-label">Tasks (JSON array)</div>
+    <textarea class="field-input" id="cf-tasks" spellcheck="false">[
+  {
+    "display_id": "run_commands",
+    "plugin_params": {
+      "commands": ["echo hello"]
+    }
+  }
+]</textarea>
+
+    <div class="form-error" id="cf-error" hidden></div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="cf-cancel">Cancel</button>
+      <button class="btn-run" id="cf-submit">Create</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const navItems = document.querySelectorAll('.nav-item');
   const views = document.querySelectorAll('.view');
@@ -697,7 +788,7 @@
       document.getElementById('view-' + target).classList.add('active');
       titleEl.textContent = titles[target];
       if (target === 'workflow') loadJobs();
-      if (target === 'settings') loadWorkflows();
+      if (target === 'settings') { loadWorkflows(); loadFlowDefinitions(); }
     });
   });
 
@@ -780,6 +871,104 @@
     }
   }
 
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  async function loadFlowDefinitions() {
+    const el = document.getElementById('flow-definitions-list');
+    try {
+      const res = await fetch('/api/flow-definitions');
+      const flows = await res.json();
+      if (!flows.length) { el.innerHTML = '<div class="list-meta">No flow definitions registered.</div>'; return; }
+      el.innerHTML = flows.map(f => `
+        <div class="toggle-row" style="flex-direction:column;align-items:stretch;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div class="toggle-name">${escapeHtml(f.name)} <span class="list-meta" style="display:inline;">(${escapeHtml(f.display_id)})</span></div>
+              <div class="toggle-desc">${f.task_count} task${f.task_count === 1 ? '' : 's'}${f.version ? ' · v' + escapeHtml(f.version) : ''}</div>
+            </div>
+            <button class="btn-link" data-view-flow="${f.id}">View</button>
+          </div>
+          <pre class="flow-json" id="flow-json-${f.id}" hidden></pre>
+        </div>`).join('');
+      el.querySelectorAll('[data-view-flow]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const pre = document.getElementById('flow-json-' + btn.dataset.viewFlow);
+          const flow = flows.find(f => String(f.id) === btn.dataset.viewFlow);
+          const nowHidden = !pre.hidden;
+          pre.hidden = nowHidden;
+          if (!nowHidden) pre.textContent = JSON.stringify(flow.definition, null, 2);
+          btn.textContent = nowHidden ? 'View' : 'Hide';
+        });
+      });
+    } catch (e) {
+      el.innerHTML = '<div class="list-meta">Could not load flow definitions — is the API reachable?</div>';
+    }
+  }
+
+  // --- Create Flow modal ---
+  const createFlowBtn = document.getElementById('create-flow-btn');
+  const createFlowOverlay = document.getElementById('create-flow-overlay');
+  const cfDisplayId = document.getElementById('cf-display-id');
+  const cfName = document.getElementById('cf-name');
+  const cfVersion = document.getElementById('cf-version');
+  const cfTasks = document.getElementById('cf-tasks');
+  const cfError = document.getElementById('cf-error');
+  const cfSubmit = document.getElementById('cf-submit');
+
+  function openCreateFlowModal() {
+    cfError.hidden = true;
+    createFlowOverlay.classList.add('active');
+    cfDisplayId.focus();
+  }
+  function closeCreateFlowModal() {
+    createFlowOverlay.classList.remove('active');
+  }
+
+  createFlowBtn.addEventListener('click', openCreateFlowModal);
+  document.getElementById('cf-cancel').addEventListener('click', closeCreateFlowModal);
+  createFlowOverlay.addEventListener('click', (e) => { if (e.target === createFlowOverlay) closeCreateFlowModal(); });
+
+  cfSubmit.addEventListener('click', async () => {
+    cfError.hidden = true;
+    const display_id = cfDisplayId.value.trim();
+    const name = cfName.value.trim();
+    const version = cfVersion.value.trim();
+    if (!display_id) { cfError.textContent = 'Display ID is required.'; cfError.hidden = false; return; }
+
+    let tasks;
+    try {
+      tasks = JSON.parse(cfTasks.value);
+      if (!Array.isArray(tasks) || !tasks.length) throw new Error('Tasks must be a non-empty JSON array.');
+    } catch (e) {
+      cfError.textContent = 'Tasks: ' + e.message;
+      cfError.hidden = false;
+      return;
+    }
+
+    cfSubmit.disabled = true;
+    cfSubmit.textContent = 'Creating…';
+    try {
+      const res = await fetch('/api/flow-definitions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_id, name: name || display_id, version: version || null, tasks })
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || 'Failed to create flow');
+      closeCreateFlowModal();
+      cfDisplayId.value = ''; cfName.value = ''; cfVersion.value = '';
+      loadFlowDefinitions();
+    } catch (e) {
+      cfError.textContent = e.message;
+      cfError.hidden = false;
+    } finally {
+      cfSubmit.disabled = false;
+      cfSubmit.textContent = 'Create';
+    }
+  });
+
   // --- Flow run (execution engine) ---
   const runFlowBtns = document.querySelectorAll('.run-flow-btn');
   const flowStatusEl = document.getElementById('flow-run-status');
@@ -851,7 +1040,7 @@
 
   // Load whichever tab is active on first paint
   if (document.getElementById('view-workflow').classList.contains('active')) loadJobs();
-  if (document.getElementById('view-settings').classList.contains('active')) loadWorkflows();
+  if (document.getElementById('view-settings').classList.contains('active')) { loadWorkflows(); loadFlowDefinitions(); }
 </script>
 
 </body>

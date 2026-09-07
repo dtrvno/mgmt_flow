@@ -11,6 +11,29 @@ function inferTaskType(task) {
   return null;
 }
 
+router.get('/flow-definitions', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, display_id, package_id, name, version, definition, created_at, updated_at
+       FROM flow_definitions ORDER BY display_id`
+    );
+    res.json(rows.map(r => ({
+      id: r.id,
+      display_id: r.display_id,
+      package_id: r.package_id,
+      name: r.name,
+      version: r.version,
+      task_count: Array.isArray(r.definition && r.definition.tasks) ? r.definition.tasks.length : 0,
+      definition: r.definition,
+      created_at: r.created_at,
+      updated_at: r.updated_at
+    })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch flow definitions' });
+  }
+});
+
 router.post('/flow-definitions', async (req, res) => {
   const def = req.body;
   if (!def || typeof def.display_id !== 'string' || !def.display_id) {
