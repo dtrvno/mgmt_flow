@@ -580,6 +580,17 @@
           </tbody>
         </table>
       </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div class="card-title">
+          <span>Nodes</span>
+          <button class="btn-run" id="create-node-btn" style="padding:5px 12px;font-size:11px;">+ Add Node</button>
+        </div>
+        <div class="list-meta" style="margin-bottom:12px;">Managed nodes — live from Postgres.</div>
+        <div id="nodes-table-wrap">
+          <div class="list-meta">Loading nodes…</div>
+        </div>
+      </div>
     </div>
 
     <!-- WORKFLOW -->
@@ -767,6 +778,42 @@
   </div>
 </div>
 
+<!-- Node modal -->
+<div class="modal-overlay" id="node-overlay">
+  <div class="modal-box">
+    <div class="modal-title" id="node-modal-title">Add Node</div>
+    <div class="modal-sub" id="node-modal-sub">Registers a new node (POST /api/nodes).</div>
+
+    <div class="field-label">Hostname</div>
+    <input class="field-input" id="nd-hostname" placeholder="e.g. node-01" autocomplete="off">
+
+    <div class="field-label">BMC IP</div>
+    <input class="field-input" id="nd-bmc-ip" placeholder="e.g. 10.0.1.10" autocomplete="off">
+
+    <div class="field-label">Management IP (optional)</div>
+    <input class="field-input" id="nd-mgmt-ip" placeholder="e.g. 10.0.2.10" autocomplete="off">
+
+    <div class="field-label">BMC User</div>
+    <input class="field-input" id="nd-bmc-user" placeholder="e.g. admin" autocomplete="off">
+
+    <div class="field-label">BMC Password</div>
+    <input class="field-input" type="password" id="nd-bmc-password" autocomplete="new-password">
+
+    <div class="field-label">Node User</div>
+    <input class="field-input" id="nd-node-user" placeholder="e.g. root" autocomplete="off">
+
+    <div class="field-label">Node Password</div>
+    <input class="field-input" type="password" id="nd-node-password" autocomplete="new-password">
+
+    <div class="form-error" id="nd-error" hidden></div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="nd-cancel">Cancel</button>
+      <button class="btn-run" id="nd-submit">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const navItems = document.querySelectorAll('.nav-item');
   const views = document.querySelectorAll('.view');
@@ -789,6 +836,7 @@
       titleEl.textContent = titles[target];
       if (target === 'workflow') loadJobs();
       if (target === 'settings') { loadWorkflows(); loadFlowDefinitions(); }
+      if (target === 'resources') loadNodes();
     });
   });
 
@@ -969,6 +1017,129 @@
     }
   });
 
+  // --- Nodes (Resources tab) ---
+  const nodeOverlay = document.getElementById('node-overlay');
+  const nodeModalTitle = document.getElementById('node-modal-title');
+  const nodeModalSub = document.getElementById('node-modal-sub');
+  const ndHostname = document.getElementById('nd-hostname');
+  const ndBmcIp = document.getElementById('nd-bmc-ip');
+  const ndMgmtIp = document.getElementById('nd-mgmt-ip');
+  const ndBmcUser = document.getElementById('nd-bmc-user');
+  const ndBmcPassword = document.getElementById('nd-bmc-password');
+  const ndNodeUser = document.getElementById('nd-node-user');
+  const ndNodePassword = document.getElementById('nd-node-password');
+  const ndError = document.getElementById('nd-error');
+  const ndSubmit = document.getElementById('nd-submit');
+  let editingNodeId = null;
+
+  function openNodeModal(node) {
+    ndError.hidden = true;
+    editingNodeId = node ? node.id : null;
+    nodeModalTitle.textContent = node ? 'Edit Node' : 'Add Node';
+    nodeModalSub.textContent = node
+      ? 'Updates this node (PUT /api/nodes/' + node.id + ').'
+      : 'Registers a new node (POST /api/nodes).';
+    const p = (node && node.params) || {};
+    ndHostname.value = p.hostname || '';
+    ndBmcIp.value = p.bmc_ip || '';
+    ndMgmtIp.value = p.mgmt_ip || '';
+    ndBmcUser.value = p.bmc_user || '';
+    ndBmcPassword.value = p.bmc_password || '';
+    ndNodeUser.value = p.node_user || '';
+    ndNodePassword.value = p.node_password || '';
+    nodeOverlay.classList.add('active');
+    ndHostname.focus();
+  }
+  function closeNodeModal() {
+    nodeOverlay.classList.remove('active');
+    editingNodeId = null;
+  }
+
+  document.getElementById('create-node-btn').addEventListener('click', () => openNodeModal(null));
+  document.getElementById('nd-cancel').addEventListener('click', closeNodeModal);
+  nodeOverlay.addEventListener('click', (e) => { if (e.target === nodeOverlay) closeNodeModal(); });
+
+  ndSubmit.addEventListener('click', async () => {
+    ndError.hidden = true;
+    const payload = {
+      hostname: ndHostname.value.trim(),
+      bmc_ip: ndBmcIp.value.trim(),
+      mgmt_ip: ndMgmtIp.value.trim(),
+      bmc_user: ndBmcUser.value.trim(),
+      bmc_password: ndBmcPassword.value,
+      node_user: ndNodeUser.value.trim(),
+      node_password: ndNodePassword.value
+    };
+    for (const [field, label] of [['hostname','Hostname'],['bmc_ip','BMC IP'],['bmc_user','BMC User'],['bmc_password','BMC Password'],['node_user','Node User'],['node_password','Node Password']]) {
+      if (!payload[field]) { ndError.textContent = label + ' is required.'; ndError.hidden = false; return; }
+    }
+
+    ndSubmit.disabled = true;
+    ndSubmit.textContent = 'Saving…';
+    try {
+      const url = editingNodeId ? '/api/nodes/' + editingNodeId : '/api/nodes';
+      const res = await fetch(url, {
+        method: editingNodeId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || 'Failed to save node');
+      closeNodeModal();
+      loadNodes();
+    } catch (e) {
+      ndError.textContent = e.message;
+      ndError.hidden = false;
+    } finally {
+      ndSubmit.disabled = false;
+      ndSubmit.textContent = 'Save';
+    }
+  });
+
+  async function deleteNode(node) {
+    if (!confirm('Delete node "' + (node.params.hostname || node.id) + '"? This cannot be undone.')) return;
+    try {
+      const res = await fetch('/api/nodes/' + node.id, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error('Failed to delete node');
+      loadNodes();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function loadNodes() {
+    const el = document.getElementById('nodes-table-wrap');
+    try {
+      const res = await fetch('/api/nodes');
+      const nodes = await res.json();
+      if (!nodes.length) { el.innerHTML = '<div class="list-meta">No nodes yet.</div>'; return; }
+      el.innerHTML = `<table>
+        <thead><tr><th>Hostname</th><th>BMC IP</th><th>Mgmt IP</th><th>BMC User</th><th>Node User</th><th></th></tr></thead>
+        <tbody>${nodes.map(n => `
+          <tr>
+            <td class="strong">${escapeHtml(n.params.hostname || '')}</td>
+            <td>${escapeHtml(n.params.bmc_ip || '')}</td>
+            <td>${escapeHtml(n.params.mgmt_ip || '—')}</td>
+            <td>${escapeHtml(n.params.bmc_user || '')}</td>
+            <td>${escapeHtml(n.params.node_user || '')}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn-link" data-edit-node="${n.id}">Edit</button>
+              <button class="btn-link" style="color:var(--red);margin-left:10px;" data-delete-node="${n.id}">Delete</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+      el.querySelectorAll('[data-edit-node]').forEach(btn => {
+        btn.addEventListener('click', () => openNodeModal(nodes.find(n => n.id === btn.dataset.editNode)));
+      });
+      el.querySelectorAll('[data-delete-node]').forEach(btn => {
+        btn.addEventListener('click', () => deleteNode(nodes.find(n => n.id === btn.dataset.deleteNode)));
+      });
+    } catch (e) {
+      el.innerHTML = '<div class="list-meta">Could not load nodes — is the API reachable?</div>';
+    }
+  }
+
   // --- Flow run (execution engine) ---
   const runFlowBtns = document.querySelectorAll('.run-flow-btn');
   const flowStatusEl = document.getElementById('flow-run-status');
@@ -1041,6 +1212,7 @@
   // Load whichever tab is active on first paint
   if (document.getElementById('view-workflow').classList.contains('active')) loadJobs();
   if (document.getElementById('view-settings').classList.contains('active')) { loadWorkflows(); loadFlowDefinitions(); }
+  if (document.getElementById('view-resources').classList.contains('active')) loadNodes();
 </script>
 
 </body>
